@@ -1,0 +1,123 @@
+---
+
+# 🏛️ Arquitetura Geral
+
+O *Pepeta Royale* será construído em **C++ (SDL2 + OpenGL)** no cliente, com **backend em Node.js/TypeScript (Nest/Fastify)** para serviços complementares (lobbies, ranking, persistência). O design segue **arquitetura em camadas**, separando **domínio, aplicação e infraestrutura**.
+
+---
+
+## 🔹 Camadas e Papéis
+
+### 1. **Camada de Apresentação (UI/UX)**
+
+* **Responsabilidade:** input do jogador, HUD, menus, renderização 2D, efeitos visuais/sonoros.
+* **Padrões adotados:**
+
+  * **MVC simplificado** → separação entre *Renderer (View)*, *Input Handler (Controller)* e *Estado do Jogo (Model)*.
+  * **Observer/Event Bus** → HUD reage a eventos do jogo (tensão, corte, vitória QTE).
+* **Tecnologias:**
+
+  * **SDL2** (janela, input, áudio básico).
+  * **OpenGL** (render 2D com batching e atlases de sprites).
+  * **SDL\_mixer** para áudio de efeitos (rasgo, vento).
+
+---
+
+### 2. **Camada de Domínio (Game Core)**
+
+* **Responsabilidade:** regras do jogo (movimento, QTE, builds, cortes, partidas).
+* **Padrões adotados:**
+
+  * **Entity-Component-System (ECS)** → leve, flexível para gerenciar pipas, linhas, efeitos.
+  * **State Machine (FSM)** → controla estados (Pré-Duelo → Partida → Resultado).
+  * **Deterministic Lockstep** → garante consistência entre clientes em multiplayer.
+* **Tecnologias:**
+
+  * **C++17/20**, código puro (sem dependências pesadas).
+  * **RapidJSON / YAML-CPP** → configs de builds, patch balance.
+  * **Box2D opcional** (se quisermos física leve para colisões simples).
+
+---
+
+### 3. **Camada de Aplicação (Rede e Lógica de Partida)**
+
+* **Responsabilidade:** sincronização multiplayer, matchmaking, persistência temporária de lobbies.
+* **Padrões adotados:**
+
+  * **CQRS (Command Query Responsibility Segregation)**:
+
+    * *Commands* = inputs do jogador enviados para todos.
+    * *Queries* = leitura de estado validado (replays, ranking).
+  * **Lockstep Input Replication** → todos os clientes executam o mesmo código com os mesmos inputs.
+* **Tecnologias:**
+
+  * **Cliente:** ENet (UDP confiável) ou Asio.
+  * **Servidor relay (fase 1):** Node.js (Fastify ou NestJS) + WebSockets/UDP bridge.
+  * **Servidor autoritativo (fase 2):** valida inputs e resultados críticos.
+
+---
+
+### 4. **Camada de Persistência (Dados e Ranking)**
+
+* **Responsabilidade:** armazenamento de perfis, progressão, estatísticas de partidas.
+* **Padrões adotados:**
+
+  * **DDD (Domain-Driven Design)** → entidades centrais (Jogador, Pipa, Linha, Build, Partida, Temporada).
+  * **Repositório** → abstrai acesso a dados.
+* **Tecnologias:**
+
+  * **PostgreSQL** → dados relacionais (usuários, builds, partidas, ranking).
+  * **Redis** → cache (fila de matchmaking, estado de lobby, rate-limits).
+  * **TypeORM / Prisma** → mapeamento ORM no backend.
+
+---
+
+### 5. **Camada de Observabilidade & Manutenção**
+
+* **Responsabilidade:** logs, métricas, anti-cheat, deploy contínuo.
+* **Padrões adotados:**
+
+  * **Circuit Breaker + Retry** em rede.
+  * **Feature Flags** para ativar/desativar builds/efeitos sem redeploy.
+* **Tecnologias:**
+
+  * **Grafana + Prometheus** (telemetria de FPS, RTT, latência, QTE accuracy).
+  * **Winston/Pino** (logs estruturados).
+  * **Docker + Kubernetes** (deploy escalável de backend).
+
+---
+
+# 📊 Padrões Globais
+
+* **MVC** → UI separada da lógica de jogo.
+* **ECS** → flexibilidade para adicionar pipas/skills sem quebrar o core.
+* **FSM** → estados do jogo (pré-duelo, batalha, encerrado).
+* **CQRS + Lockstep** → consistência em rede e replays determinísticos.
+* **DDD + Repositório** → clareza na modelagem do domínio.
+* **Hot Reload de Configs** → builds/efeitos balanceados via JSON/YAML.
+
+---
+
+# 🛠️ Tecnologias por Componente
+
+| Componente        | Tecnologia                                     |
+| ----------------- | ---------------------------------------------- |
+| Cliente (UI/Game) | C++17/20, SDL2, OpenGL, SDL\_mixer, ECS custom |
+| Rede (Cliente)    | ENet (UDP confiável) / Boost.Asio              |
+| Backend           | Node.js + Fastify/NestJS, Redis, PostgreSQL    |
+| Persistência      | PostgreSQL, Redis, TypeORM/Prisma              |
+| Configuração      | JSON/YAML (RapidJSON/YAML-CPP)                 |
+| Observabilidade   | Prometheus, Grafana, Pino/Winston              |
+| Deploy            | Docker, Kubernetes, CI/CD pipeline             |
+
+---
+
+# ✅ Benefícios da Arquitetura
+
+* **Clara separação de responsabilidades** (UI, Domínio, Rede, Persistência).
+* **Determinismo** → garante justiça nas partidas e permite replays.
+* **Escalabilidade** → backend modular, pronto para autoritativo no futuro.
+* **Manutenção simples** → builds e balance em arquivos externos.
+* **Robustez** → segurança desde a rede (rate-limit, checagem determinística).
+
+---

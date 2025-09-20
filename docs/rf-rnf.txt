@@ -1,0 +1,252 @@
+---
+
+# 📜 Entidades e Atributos Essenciais
+
+### 👤 **Jogador**
+
+* **id\_jogador** (PK)
+* nome\_usuario
+* email / auth\_id
+* elo\_atual (MMR)
+* moedas
+* xp\_total
+* data\_criacao
+
+### 🪁 **Pipa**
+
+* **id\_pipa** (PK)
+* nome
+* tipo (raia, peixinho, quadrada...)
+* stats\_base (velocidade, defesa, ataque)
+* habilidade\_passiva
+* descricao
+
+### 🧵 **Linha**
+
+* **id\_linha** (PK)
+* nome
+* efeito (crítica, regenerativa, defensiva...)
+* modificadores (chance\_critico, regen\_por\_s, bonus\_defesa...)
+* descricao
+
+### 🛠️ **Build**
+
+* **id\_build** (PK)
+* **id\_jogador** (FK)
+* **id\_pipa** (FK)
+* **id\_linha** (FK)
+* nome\_custom
+* data\_criacao
+
+### 🎮 **Partida**
+
+* **id\_partida** (PK)
+* modo (1v1, bairro, torneio)
+* data
+* duracao
+* resultado (vencedor, perdedor, stats)
+
+### 🏠 **Lobby**
+
+* **id\_lobby** (PK)
+* codigo\_convite
+* tipo (privado/público)
+* host (FK -> Jogador)
+* status (aguardando, em\_andamento, encerrado)
+
+### 🏆 **Ranking/Temporada**
+
+* **id\_temporada** (PK)
+* nome
+* data\_inicio
+* data\_fim
+* regras (buffs/nerfs aplicados, builds desabilitadas etc.)
+
+---
+
+# 🔗 Relacionamentos
+
+1. **Jogador – Build**
+
+   * 1\:N (um jogador pode ter várias builds salvas).
+
+2. **Build – Pipa**
+
+   * N:1 (cada build usa exatamente uma pipa).
+
+3. **Build – Linha**
+
+   * N:1 (cada build usa exatamente uma linha).
+
+4. **Jogador – Partida**
+
+   * N\:M (um jogador participa de muitas partidas; cada partida tem vários jogadores).
+   * Tabela associativa: **ParticipacaoPartida** (id\_jogador, id\_partida, build\_usada, resultado, stats).
+
+5. **Jogador – Lobby**
+
+   * N\:M (um jogador pode estar em vários lobbies ao longo do tempo; um lobby tem vários jogadores).
+
+6. **Jogador – Ranking/Temporada**
+
+   * N\:M (um jogador acumula pontuação em cada temporada).
+   * Tabela associativa: **PontuacaoTemporada** (id\_jogador, id\_temporada, elo, posicao).
+
+---
+
+# 📊 Diagrama M.E.R. (ASCII simplificado)
+
+```
+[Jogador]──<possui>──[Build]──usa──[Pipa]
+    │                  │
+    │                  └──usa──[Linha]
+    │
+    ├──<participa>──[Partida]──<ocorre em>──[Lobby]
+    │
+    └──<compete>──[PontuacaoTemporada]──[Temporada]
+
+Entidades principais:
+Jogador(id_jogador, nome_usuario, elo_atual, ...)
+Pipa(id_pipa, nome, tipo, stats_base, ...)
+Linha(id_linha, nome, efeito, modificadores, ...)
+Build(id_build, id_jogador, id_pipa, id_linha, ...)
+Partida(id_partida, modo, data, resultado, ...)
+Lobby(id_lobby, codigo_convite, host, ...)
+Temporada(id_temporada, nome, data_inicio, data_fim)
+```
+
+---
+
+# ✅ Observações Técnicas
+
+* **Build** é a junção prática de **Pipa + Linha**, sempre atrelada a um jogador.
+* **ParticipacaoPartida** armazena estatísticas individuais (cortes feitos, QTE vencidos, vitórias).
+* **PontuacaoTemporada** garante ranking sazonal, permitindo resets sem apagar histórico.
+* Modelo já pensado para **expansão futura** (ex.: adicionar “Skin” como entidade cosmética).
+
+---
+
+👉 Deseja que eu avance e já prepare o **D.E.R. (Diagrama Entidade-Relacionamento lógico, com cardinalidades 1\:N, N\:M e PK/FK explícitos)** em notação mais formal (Chen ou Crow’s Foot)?
+
+---
+
+# 📐 D.E.R. Técnico – *Pepeta Royale*
+
+## 🗄️ Entidades (com PK/FK)
+
+### **Jogador**
+
+* **PK** id\_jogador
+* nome\_usuario
+* email / auth\_id
+* elo\_atual
+* moedas
+* xp\_total
+* data\_criacao
+
+### **Pipa**
+
+* **PK** id\_pipa
+* nome
+* tipo (raia, peixinho, quadrada)
+* stats\_base (velocidade, defesa, ataque)
+* habilidade\_passiva
+* descricao
+
+### **Linha**
+
+* **PK** id\_linha
+* nome
+* efeito (crítica, regenerativa, defensiva, etc.)
+* modificadores (chance\_critico, regen\_por\_s, bonus\_defesa)
+* descricao
+
+### **Build**
+
+* **PK** id\_build
+* **FK** id\_jogador → Jogador.id\_jogador
+* **FK** id\_pipa → Pipa.id\_pipa
+* **FK** id\_linha → Linha.id\_linha
+* nome\_custom
+* data\_criacao
+
+### **Partida**
+
+* **PK** id\_partida
+* modo (1v1, bairro, torneio)
+* data
+* duracao
+* resultado (global)
+
+### **ParticipacaoPartida** *(tabela associativa Jogador↔Partida)*
+
+* **PK** (id\_jogador, id\_partida)
+* **FK** id\_jogador → Jogador.id\_jogador
+* **FK** id\_partida → Partida.id\_partida
+* **FK** id\_build → Build.id\_build
+* resultado (vencedor/derrotado)
+* cortes\_feitos
+* qtes\_vencidos
+
+### **Lobby**
+
+* **PK** id\_lobby
+* codigo\_convite
+* tipo (privado/público)
+* host (FK → Jogador.id\_jogador)
+* status (aguardando, em\_andamento, encerrado)
+
+### **JogadorLobby** *(tabela associativa Jogador↔Lobby)*
+
+* **PK** (id\_jogador, id\_lobby)
+* **FK** id\_jogador → Jogador.id\_jogador
+* **FK** id\_lobby → Lobby.id\_lobby
+
+### **Temporada**
+
+* **PK** id\_temporada
+* nome
+* data\_inicio
+* data\_fim
+* regras (buffs/nerfs aplicados)
+
+### **PontuacaoTemporada** *(tabela associativa Jogador↔Temporada)*
+
+* **PK** (id\_jogador, id\_temporada)
+* **FK** id\_jogador → Jogador.id\_jogador
+* **FK** id\_temporada → Temporada.id\_temporada
+* elo
+* posicao
+
+---
+
+# 🔗 Cardinalidades (Crow’s Foot)
+
+```
+Jogador ───< (1:N) ───< Build >─── (N:1) ─── Pipa
+        │                         \
+        │                          \─── (N:1) ─── Linha
+        │
+        ├───< (N:M via ParticipacaoPartida) >─── Partida
+        │
+        ├───< (N:M via JogadorLobby) >─── Lobby
+        │
+        └───< (N:M via PontuacaoTemporada) >─── Temporada
+```
+
+* **Jogador – Build**: 1\:N → um jogador pode ter várias builds.
+* **Build – Pipa**: N:1 → cada build referencia 1 pipa.
+* **Build – Linha**: N:1 → cada build referencia 1 linha.
+* **Jogador – Partida**: N\:M → resolvido por **ParticipacaoPartida** (guarda stats individuais).
+* **Jogador – Lobby**: N\:M → resolvido por **JogadorLobby**.
+* **Jogador – Temporada**: N\:M → resolvido por **PontuacaoTemporada**.
+
+---
+
+# ✅ Observações
+
+* O modelo está **3FN (3ª Forma Normal)**: dados bem distribuídos, sem redundância crítica.
+* As tabelas associativas (**ParticipacaoPartida, JogadorLobby, PontuacaoTemporada**) centralizam relacionamentos N\:M.
+* **Build** é essencial para ligar jogador à combinação pipa+linha.
+* Está pronto para **implementar em PostgreSQL** ou outro banco relacional.
+

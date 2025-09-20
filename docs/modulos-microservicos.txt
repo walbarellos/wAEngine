@@ -1,0 +1,157 @@
+---
+
+# 🏗️ Módulos/Microserviços do *Pepeta Royale*
+
+---
+
+## 🎮 **Game Client (C++/SDL2/OpenGL)**
+
+**Responsabilidade:** interface direta com o jogador (inputs, HUD, render, QTE, lógica determinística local).
+
+* **Entradas:**
+
+  * Inputs do jogador (teclado/mouse/touch).
+  * Pacotes de rede (estado de lobby, comandos de outros jogadores).
+  * Configs de build (JSON/YAML baixado do Balance Service).
+
+* **Saídas:**
+
+  * Comandos de input para o Net Sync Service.
+  * Eventos de telemetria (FPS, QTE accuracy) para Telemetry Service.
+  * Logs locais.
+
+* **Comunicação:** UDP confiável (ENet/Asio) para sincronização de inputs; HTTP/REST para autenticação inicial.
+
+---
+
+## 🔗 **Net Sync Service**
+
+**Responsabilidade:** orquestrar a sincronização determinística das partidas.
+
+* **Entradas:**
+
+  * Comandos de input dos clientes.
+  * Seed de partida (para RNG determinístico).
+
+* **Saídas:**
+
+  * Ticks consolidados (inputs agregados).
+  * Confirmação de integridade (checksum de estado).
+  * Pacotes de correção (snapshot/rollback em caso de divergência).
+
+* **Comunicação:**
+
+  * UDP (tempo real) → lockstep.
+  * WebSocket (fallback) → relay em casos de NAT restrito.
+
+---
+
+## 🏠 **Lobby & Matchmaking Service**
+
+**Responsabilidade:** criar, listar e gerenciar lobbies; emparelhar jogadores em partidas.
+
+* **Entradas:**
+
+  * Solicitações HTTP/REST do cliente (criar/joinar lobby, matchmaking).
+
+* **Saídas:**
+
+  * Código/link do lobby.
+  * Lista de jogadores conectados.
+  * Endereço/porta do Net Sync Service designado.
+
+* **Comunicação:** REST/HTTP + WebSocket para atualizações em tempo real.
+
+---
+
+## 🏆 **Ranking & Profile Service**
+
+**Responsabilidade:** gerenciar perfis, histórico de partidas, progressão cosmética e MMR.
+
+* **Entradas:**
+
+  * Resultados finais de partidas (do Net Sync Service).
+  * Consultas de perfil (do cliente).
+
+* **Saídas:**
+
+  * Atualização de MMR/Elo.
+  * Estatísticas de temporada.
+  * Inventário de cosméticos do jogador.
+
+* **Comunicação:** REST/HTTP (consulta de perfil); gRPC/REST interno (com Matchmaking e Telemetry).
+
+---
+
+## ⚖️ **Balance & Content Service**
+
+**Responsabilidade:** servir arquivos de configuração de builds, patch notes e balanceamento.
+
+* **Entradas:**
+
+  * Atualizações do time de game design (JSON/YAML).
+
+* **Saídas:**
+
+  * Configurações baixadas pelos clientes na inicialização.
+  * Parâmetros de builds aplicados pelo Net Sync Service.
+
+* **Comunicação:** CDN/HTTP (download de configs).
+
+---
+
+## 📊 **Telemetry & Anti-Cheat Service**
+
+**Responsabilidade:** coletar métricas de jogo e detectar comportamento suspeito.
+
+* **Entradas:**
+
+  * Eventos dos clientes (latência, FPS, QTE timing).
+  * Estados e checksums do Net Sync Service.
+
+* **Saídas:**
+
+  * Alertas de possível cheat.
+  * Relatórios de métricas (Prometheus/Grafana).
+
+* **Comunicação:** gRPC ou Kafka/NATS (stream de eventos).
+
+---
+
+## 🔒 **Auth & Identity Service**
+
+**Responsabilidade:** autenticação de jogadores e gestão de sessões.
+
+* **Entradas:**
+
+  * Login via email/OAuth.
+
+* **Saídas:**
+
+  * JWT + refresh tokens.
+  * Device binding opcional.
+
+* **Comunicação:** REST/HTTP (para clientes e outros serviços).
+
+---
+
+# 📡 Comunicação entre módulos
+
+* **Cliente ↔ Net Sync Service:** UDP confiável (inputs determinísticos).
+* **Cliente ↔ Lobby Service:** REST/HTTP + WebSocket (criar/entrar em lobby, matchmaking).
+* **Cliente ↔ Ranking/Profile:** REST/HTTP (consultar perfil, ranking, skins).
+* **Cliente ↔ Balance Service:** HTTP/CDN (baixar configs de builds).
+* **Cliente ↔ Auth Service:** REST/HTTP (login).
+* **Serviços internos:** gRPC/Kafka para alta performance (Telemetry, Ranking, Anti-Cheat).
+
+---
+
+# 🔑 Benefícios dessa modularização
+
+* **Escalabilidade:** cada serviço pode ser replicado horizontalmente (mais instâncias).
+* **Resiliência:** falha no Ranking não derruba a partida em andamento (desacoplamento).
+* **Flexibilidade:** podemos trocar Balance Service (JSON → DB) sem tocar no cliente.
+* **Segurança:** Auth centralizado, Net Sync blindado contra pacotes inválidos.
+* **Evolução Caracol:** começamos simples (Lobby + Net Sync + Ranking em monólito leve), depois separamos em microserviços.
+
+---

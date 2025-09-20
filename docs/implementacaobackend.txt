@@ -1,0 +1,316 @@
+Perfeito, discípulo. Abaixo está o desenho **executável** da camada de servidor: **lógica de negócios**, **rotas REST/GraphQL**, **autenticação/autorização** e **integração com banco** — alinhado ao nosso DER e à arquitetura modular (Auth, Lobby/Matchmaking, Net Sync, Ranking/Profile, Balance/Content, Telemetry/Anti-Cheat).
+
+---
+
+# 🧠 Lógica de Negócios (núcleo)
+
+## 1) Estados e Fluxos principais
+
+* **Lobby FSM**: `CRIADO → AGUARDANDO → PRE_DUELO(10s) → EM_ANDAMENTO → ENCERRADO`.
+* **Partida**:
+
+  * **Pré-Duelo (10s)**: 3–5 QTEs; pontuação = ∑ acertos ponderados por efeitos da build.
+  * **Vantagem inicial**:
+
+    * `win_pre_duelo ⇒ +10% durabilidade` OU `energia cheia` OU `skill carregada`.
+  * **Resultado**: vencedor/derrotado, estatísticas (cortes, QTEs vencidos, duração).
+* **MMR/Elo**:
+
+  * Atualização com **Glicko/Elo** simplificado:
+    `new = old + K * (score - expected)` (K dinâmico por incerteza).
+* **Builds (pipa + linha)**:
+
+  * Aplicadas por **config externa** (JSON): efeitos (ex.: crítico, regen, defesa) impactam:
+
+    * **janela** de QTE (ms),
+    * **peso** do acerto (score multiplier),
+    * **perdão** (tolerância de erro).
+
+## 2) Regras críticas
+
+* **Integridade de partida (lockstep)**:
+
+  * Inputs em *ticks* numerados; `checksum` por *tick*.
+  * Divergência ⇒ solicitar `snapshot&rollback`.
+* **Anti-Cheat QTE**:
+
+  * Validação de tempo: `|t_cliente - t_servidor| < janela + tolerância(latência)`.
+  * Taxas anômalas (acerto >99% com jitter alto) ⇒ flag.
+
+---
+
+# 🛣️ Rotas REST (HTTP) — *contratos enxutos*
+
+Base URL: `https://api.pepeta.gg/v1`
+
+## Auth & Perfil
+
+* `POST /auth/signup` → cria conta.
+* `POST /auth/login` → retorna `{ accessToken, refreshToken }`.
+* `POST /auth/refresh` → renova tokens.
+* `GET /profile/me` (auth) → perfil + inventário.
+* `PATCH /profile/me` (auth) → altera nome/visuais.
+
+## Lobbies & Matchmaking
+
+* `POST /lobbies` (auth) → cria lobby `{ id, code, type, hostAddr }`.
+* `POST /lobbies/join` (auth) `{ code }` → entra.
+* `GET /lobbies/:id` (auth) → status do lobby.
+* `POST /lobbies/:id/start` (host) → transita `AGUARDANDO → PRE_DUELO`.
+* `POST /lobbies/:id/leave` (auth) → sair.
+
+## Partidas
+
+* `POST /matches/:id/qte/submit` (auth)
+  Body: `{ tick, qteId, hitTimeMs, deviceLatencyMs }`
+  Resp: `{ accepted: bool, scoreDelta }`
+* `POST /matches/:id/result` (net-sync)
+  Body: `{ winnerId, stats[], checksums[] }`
+* `GET /matches/:id` (auth) → resumo da partida.
+
+## Ranking & Temporadas
+
+* `GET /rankings/global?season=...`
+* `GET /rankings/me` (auth)
+* `GET /seasons/current` / `GET /seasons/:id`
+
+## Builds & Conteúdo
+
+* `GET /content/builds` → JSON de pipas, linhas, efeitos (cacheável/CDN).
+* `POST /builds` (auth) → cria/edita build do jogador.
+* `GET /builds/mine` (auth)
+
+## Telemetria
+
+* `POST /telemetry/client` (auth) → `{ fps, rtt, packetLoss, qteAcc }`.
+
+> Todas as rotas **validam payload** (ex.: Zod/Valibot no gateway) e exigem **JWT** (exceto signup/login).
+
+---
+
+# 🧩 GraphQL (opcional/side-by-side)
+
+Endpoint: `POST /graphql`
+
+### Schema (recorte)
+
+```graphql
+type Query {
+  me: Player!
+  lobby(id: ID!): Lobby
+  rankings(seasonId: ID, limit: Int = 100): [RankingEntry!]!
+  buildsMine: [Build!]!
+  contentBuilds: ContentBundle!
+}
+
+type Mutation {
+  createLobby(type: LobbyType!): Lobby!
+  joinLobby(code: String!): Lobby!
+  startLobby(id: ID!): Lobby!
+  submitQTE(matchId: ID!, qteId: ID!, hitTimeMs: Int!, deviceLatencyMs: Int!): QTEResult!
+  saveBuild(input: BuildInput!): Build!
+}
+```
+
+**Autorização por *directives***:
+
+```graphql
+directive @auth(role: Role = USER) on FIELD_DEFINITION
+```
+
+(Resolvers verificam `ctx.user.role` e *claims* como `playerId`.)
+
+---
+
+# 🔐 Autenticação & Autorização
+
+* **AuthN**: `JWT (access ~15min, refresh ~7d)`, `HS256/RS256`.
+* **Fluxo**: login → tokens; *silent refresh* no cliente.
+* **AuthZ**:
+
+  * RBAC mínimo (`USER`, `MOD`, `ADMIN`).
+  * **Host-only** para `POST /lobbies/:id/start`.
+  * **Match-member** para `submitQTE`/`GET /matches/:id`.
+* **Segurança**:
+
+  * TLS/HSTS, CORS estrito, CSP (para web painel), SRI.
+  * **Rate limit** IP/conta; *proof-of-work leve* em endpoints sensíveis.
+  * **Audit log** p/ rotas estado crítico (start, result).
+
+---
+
+# 🗃️ Banco de Dados (PostgreSQL) — *DER implementado*
+
+## Tabelas (DDL abreviado)
+
+```sql
+CREATE TABLE jogador (
+  id_jogador       UUID PRIMARY KEY,
+  nome_usuario     TEXT UNIQUE NOT NULL,
+  email            CITEXT UNIQUE NOT NULL,
+  pass_hash        TEXT NOT NULL,
+  elo_atual        INT DEFAULT 1000,
+  moedas           INT DEFAULT 0,
+  xp_total         BIGINT DEFAULT 0,
+  data_criacao     TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE pipa (
+  id_pipa UUID PRIMARY KEY,
+  nome TEXT NOT NULL,
+  tipo TEXT NOT NULL,
+  stats_base JSONB NOT NULL,
+  habilidade_passiva TEXT,
+  descricao TEXT
+);
+
+CREATE TABLE linha (
+  id_linha UUID PRIMARY KEY,
+  nome TEXT NOT NULL,
+  efeito TEXT NOT NULL,
+  modificadores JSONB NOT NULL,
+  descricao TEXT
+);
+
+CREATE TABLE build (
+  id_build UUID PRIMARY KEY,
+  id_jogador UUID REFERENCES jogador(id_jogador) ON DELETE CASCADE,
+  id_pipa UUID REFERENCES pipa(id_pipa),
+  id_linha UUID REFERENCES linha(id_linha),
+  nome_custom TEXT,
+  data_criacao TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE temporada (
+  id_temporada UUID PRIMARY KEY,
+  nome TEXT, data_inicio DATE, data_fim DATE, regras JSONB
+);
+
+CREATE TABLE pontuacao_temporada (
+  id_jogador UUID REFERENCES jogador(id_jogador) ON DELETE CASCADE,
+  id_temporada UUID REFERENCES temporada(id_temporada) ON DELETE CASCADE,
+  elo INT, posicao INT,
+  PRIMARY KEY (id_jogador, id_temporada)
+);
+
+CREATE TABLE lobby (
+  id_lobby UUID PRIMARY KEY,
+  codigo_convite TEXT UNIQUE NOT NULL,
+  tipo TEXT CHECK (tipo IN ('publico','privado')) NOT NULL,
+  host UUID REFERENCES jogador(id_jogador),
+  status TEXT CHECK (status IN ('criado','aguardando','pre_duelo','em_andamento','encerrado')) NOT NULL
+);
+
+CREATE TABLE jogador_lobby (
+  id_jogador UUID REFERENCES jogador(id_jogador) ON DELETE CASCADE,
+  id_lobby UUID REFERENCES lobby(id_lobby) ON DELETE CASCADE,
+  PRIMARY KEY (id_jogador, id_lobby)
+);
+
+CREATE TABLE partida (
+  id_partida UUID PRIMARY KEY,
+  id_lobby UUID REFERENCES lobby(id_lobby),
+  modo TEXT CHECK (modo IN ('1v1','bairro','torneio')) NOT NULL,
+  data TIMESTAMPTZ DEFAULT now(), duracao INT, resultado JSONB
+);
+
+CREATE TABLE participacao_partida (
+  id_jogador UUID REFERENCES jogador(id_jogador) ON DELETE CASCADE,
+  id_partida UUID REFERENCES partida(id_partida) ON DELETE CASCADE,
+  id_build UUID REFERENCES build(id_build),
+  resultado TEXT, cortes_feitos INT, qtes_vencidos INT,
+  PRIMARY KEY (id_jogador, id_partida)
+);
+
+-- Índices úteis
+CREATE INDEX idx_build_jogador ON build(id_jogador);
+CREATE INDEX idx_participacao_partida_partida ON participacao_partida(id_partida);
+CREATE INDEX idx_pontuacao_temporada_elo ON pontuacao_temporada(elo);
+```
+
+> ORM sugerido no backend: **Prisma** (TS) ou **TypeORM** (Nest). Integrações via **migrations**.
+
+---
+
+# 🧪 Validações & Regras (exemplos)
+
+## Zod (ou Joi) – REST payloads
+
+```ts
+const submitQTESchema = z.object({
+  qteId: z.string().uuid(),
+  hitTimeMs: z.number().int().min(0).max(10000),
+  deviceLatencyMs: z.number().int().min(0).max(1000),
+  tick: z.number().int().min(0)
+});
+```
+
+## Regra de negócio — pontuação do Pré-Duelo
+
+```ts
+// pseudo-code no Net Sync Service
+score = 0
+for each qte in window(10s):
+  base = timingScore(hitTimeMs)         // 0..1 (ease)
+  mod  = buildMods(qte, playerBuild)    // ex.: +critChance -> +0.1
+  score += clamp(base * (1+mod), 0, 1.2)
+
+winner = max(scoreA, scoreB)  // N: comparações por par
+grantAdvantage(winner)        // +durabilidade OU +energia OU skill carregada
+```
+
+## Atualização de Elo (Elo clássico)
+
+```ts
+expected = 1 / (1 + 10 ** ((elo_oponente - elo_jogador) / 400))
+newElo = elo_jogador + K * (score - expected)   // score ∈ {1,0.5,0}
+```
+
+---
+
+# 🛰️ Integração entre serviços
+
+* **Cliente C++**:
+
+  * Auth REST → obtém JWT.
+  * Lobby REST → cria/entra e recebe endpoint UDP do **Net Sync**.
+  * **UDP (ENet/Asio)** para inputs/ticks com Net Sync (lockstep determinístico).
+  * REST para Perfil/Ranking/Builds/Content; Telemetry POST assíncrono.
+
+* **Net Sync Service**:
+
+  * Recebe inputs, agrega por tick, envia *tick* consolidado.
+  * Verifica `checksum` por *tick*; salva `match_result` ao final (REST → Ranking).
+
+* **Ranking/Profile**:
+
+  * Recebe resultados, recalcula Elo, persiste `participacao_partida` e `pontuacao_temporada`.
+
+* **Balance/Content**:
+
+  * Servido por CDN; clientes fazem cache; *feature flags* ativam patches.
+
+* **Telemetry/Anti-Cheat**:
+
+  * Stream de eventos (NATS/Kafka); dashboards (Prometheus/Grafana); flags.
+
+---
+
+# 🧱 Middleware & Segurança (gateway)
+
+* **Helmet/CSP**, **CORS** estrito, **HSTS**, **TLS**.
+* **Rate limit** por IP/rota e **API keys** para serviços internos.
+* **Input validation** em todas as rotas (400 em erro).
+* **Auditoria** (rota, userId, ip, payload hash).
+* **Backoff/Retry** em chamadas inter-serviços; **circuit breaker**.
+
+---
+
+# ✅ Entregáveis imediatos (próximos passos)
+
+1. **OpenAPI 3.0** para todas as rotas REST acima.
+2. **Schemas Prisma/TypeORM** com migrations das tabelas (DDL acima).
+3. **Protos gRPC** (opcional) para Net Sync ↔ Ranking/Telemetry.
+4. **Testes de contrato** (Supertest) e **teste determinístico** de QTE (seedada).
+
+Se quiser, eu já escrevo o **OpenAPI (YAML)** das rotas + os **schemas Prisma** para você colocar no repositório e subir o primeiro backend skeleton.

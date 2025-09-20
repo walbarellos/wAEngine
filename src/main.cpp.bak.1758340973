@@ -1,0 +1,234 @@
+#include "core/Clock.hpp"
+#include "engine/Application.hpp"
+#include "engine/Renderer.hpp"
+#include "engine/Input.hpp"
+#include "engine/HUD.hpp"
+#include "engine/Screenshot.hpp"
+
+// ECS
+#include "ecs/Registry.hpp"
+#include "ecs/components/Position.hpp"
+#include "ecs/components/Velocity.hpp"
+#include "ecs/components/Kite.hpp"
+#include "ecs/components/Wind.hpp"
+
+#include "ecs/MovementSystem.hpp"
+#include "ecs/systems/KiteSystem.hpp"
+#include "ecs/systems/RenderSystem.hpp"
+#include "ecs/systems/WindSystem.hpp"
+#include "ecs/systems/HudSystem.hpp"
+#include "ecs/systems/DestroySystem.hpp"
+#include "ecs/debug/DebugSystem.hpp"
+
+#include <SDL2/SDL.h>
+#include <iostream>
+#include <algorithm> // std::clamp
+
+// =============================
+// Configuração do jogo
+// =============================
+struct GameConfig {
+    static constexpr double FIXED_DT = 1.0 / 120.0;   // step de física
+    static constexpr double MAX_DT   = 0.25;         // evita picos (alt-tab / breakpoint)
+    static constexpr int    PRINT_FPS_EVERY = 30;    // imprime FPS no console a cada X frames
+};
+
+// =============================
+// Main Loop
+// =============================
+int main() {
+    try {
+        Application app("Pepeta ECS Engine", 800, 600);
+        Renderer renderer;
+        Clock clock;
+        Input input;
+        HUD hud(app.getWindow());
+        Registry reg;
+
+        // =======================
+        // Entidades
+        // =======================
+        Entity kite = reg.create();
+        reg.add(kite, Position{0.0f, 0.5f});
+        reg.add(kite, Velocity{0.0f, 0.0f});
+        reg.add(kite, Kite{false, 0.0f, 1.0f}); 
+
+        Entity windEntity = reg.create();
+        reg.add(windEntity, Wind{0.0f});
+
+        // =======================
+        // Sistemas
+        // =======================
+        MovementSystem movementSystem;
+        KiteSystem     kiteSystem;
+        RenderSystem   renderSystem;
+        WindSystem     windSystem;
+        HudSystem      hudSystem;
+        DestroySystem  destroySystem;
+        DebugSystem    debugSystem;
+
+        // =======================
+        // Estado
+        // =======================
+        bool   running     = true;
+        bool   paused      = false;
+        double acc         = 0.0;
+        double elapsedTime = 0.0;
+        double fps         = 0.0;
+        int    frameCount  = 0;
+
+        std::cout
+            << "== Menu de Debug ==\n"
+            << "ESC = Sair | P = Pausar | F12 = Screenshot\n"
+            << "R = Reset Kite | F = Mostrar FPS | D = Toggle Debug\n"
+            << "+/- = Ajustar Durabilidade | W/S = Ajustar Força do Vento\n"
+            << "H = Alternar HUD (Compact/Full)  | G = Gerar log do frame (debug)\n"
+            << "===================\n";
+
+        // -----------------------
+        // Loop principal
+        // -----------------------
+        while (running) {
+            try {
+                // -------- Entrada --------
+                input.beginFrame();
+                SDL_Event ev;
+                while (SDL_PollEvent(&ev)) {
+                    if (ev.type == SDL_QUIT) {
+                        std::cout << "[DEBUG] SDL_QUIT recebido, mas ignorado (janela não será fechada)\n";
+                    }
+                    if (ev.type == SDL_KEYDOWN) {
+                        switch (ev.key.keysym.sym) {
+                            case SDLK_ESCAPE:
+                                running = false;
+                                std::cout << "[DEBUG] Encerrando por tecla ESC\n";
+                                break;
+
+                            case SDLK_r: {
+                                reg.getComponent<Position>(kite) = {0.0f, 0.5f};
+                                reg.getComponent<Velocity>(kite) = {0.0f, 0.0f};
+                                reg.getComponent<Kite>(kite)     = {false, 0.0f, 1.0f};
+                                std::cout << "[DEBUG] Kite resetado\n";
+                            } break;
+
+                            case SDLK_F12: {
+                                int w, h;
+                                SDL_GetWindowSize(app.getWindow(), &w, &h);
+                                Screenshot::save(w, h);
+                                std::cout << "[DEBUG] Screenshot salva\n";
+                            } break;
+
+                            case SDLK_p:
+                                paused = !paused;
+                                std::cout << (paused ? "[DEBUG] Jogo pausado\n"
+                                                     : "[DEBUG] Jogo retomado\n");
+                                break;
+
+                            case SDLK_f:
+                                std::cout << "[DEBUG] FPS atual: " << fps << "\n";
+                                break;
+
+                            case SDLK_d:
+                                debugSystem.toggle();
+                                std::cout << "[DEBUG] DebugSystem "
+                                          << (debugSystem.isEnabled() ? "ativado" : "desativado")
+                                          << "\n";
+                                break;
+
+                            case SDLK_PLUS:
+                            case SDLK_EQUALS: {
+                                auto& kc = reg.getComponent<Kite>(kite);
+                                kc.durability = std::min(1.0f, kc.durability * 1.1f);
+                                std::cout << "[DEBUG] Durabilidade++ -> " << kc.durability << "\n";
+                            } break;
+
+                            case SDLK_MINUS: {
+                                auto& kc = reg.getComponent<Kite>(kite);
+                                kc.durability = std::max(0.0f, kc.durability * 0.9f);
+                                std::cout << "[DEBUG] Durabilidade-- -> " << kc.durability << "\n";
+                            } break;
+
+                            case SDLK_w: {
+                                auto& wc = reg.getComponent<Wind>(windEntity);
+                                wc.force = std::clamp(wc.force + 0.1f, -1.0f, 1.0f);
+                                std::cout << "[DEBUG] Wind++ -> " << wc.force << "\n";
+                            } break;
+
+                            case SDLK_s: {
+                                auto& wc = reg.getComponent<Wind>(windEntity);
+                                wc.force = std::clamp(wc.force - 0.1f, -1.0f, 1.0f);
+                                std::cout << "[DEBUG] Wind-- -> " << wc.force << "\n";
+                            } break;
+
+                            case SDLK_h:
+                                std::cout << "[DEBUG] Alternar HUD solicitado\n";
+                                break;
+
+                            case SDLK_g:
+                                std::cout << "[DEBUG] Dump de frame solicitado\n";
+                                debugSystem.requestDumpOnce();
+                                break;
+                        }
+                    }
+                    input.handleEvent(ev);
+                }
+
+                // -------- Tempo --------
+                double dt = clock.delta();
+                dt = std::clamp(dt, 0.0, GameConfig::MAX_DT);
+                acc += dt;
+                elapsedTime += dt;
+                frameCount++;
+
+                if (elapsedTime >= 1.0) {
+                    fps = frameCount / elapsedTime;
+                    frameCount = 0;
+                    elapsedTime = 0.0;
+                    static int tick = 0;
+                    if (++tick % GameConfig::PRINT_FPS_EVERY == 0) {
+                        std::cout << "[DEBUG] FPS médio ~ " << fps << "\n";
+                    }
+                }
+
+                // -------- Update fixo ECS --------
+                if (!paused) {
+                    while (acc >= GameConfig::FIXED_DT) {
+                        windSystem.update(reg, GameConfig::FIXED_DT);
+                        kiteSystem.update(reg, input, GameConfig::FIXED_DT);
+                        movementSystem.update(reg, static_cast<float>(GameConfig::FIXED_DT));
+                        destroySystem.update(reg);
+                        debugSystem.tick(reg, /*verbose*/ false);
+                        acc -= GameConfig::FIXED_DT;
+                    }
+                }
+
+                // -------- Render --------
+				double t = SDL_GetTicks() / 1000.0;
+				float r = 0.2f + 0.2f * std::sin(t * 0.1);
+				float g = 0.4f + 0.3f * std::sin(t * 0.13);
+				float b = 0.6f + 0.3f * std::sin(t * 0.07);
+				renderer.clear(r, g, b);
+
+                renderSystem.update(reg, renderer);
+
+                hudSystem.update(reg, hud, fps, paused, debugSystem.isEnabled(), input);
+
+                SDL_GL_SwapWindow(app.getWindow());
+            }
+            catch (const std::exception& e) {
+                std::cerr << "[ERRO] Exceção no loop: " << e.what() << "\n";
+            }
+        }
+
+        // Saiu do while
+        std::cout << "[DEBUG] Loop principal terminou porque running ficou false\n";
+    }
+    catch (std::exception& e) {
+        std::cerr << "Erro fatal: " << e.what() << "\n";
+        std::cout << "Loop finalizado. Pressione ENTER para sair.\n";
+        std::cin.get();
+        return 1;
+    }
+
+    return 0;
+}

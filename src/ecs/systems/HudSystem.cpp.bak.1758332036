@@ -1,0 +1,48 @@
+#include "ecs/systems/HudSystem.hpp"
+#include "ecs/components/Kite.hpp"
+#include "ecs/components/Wind.hpp"
+#include <algorithm>
+#include <sstream>
+#include <iomanip>
+
+void HudSystem::update(Registry& reg, HUD& hud, double fps, bool paused) {
+    hud.clear();
+
+    // Debug info do Kite
+    auto kites = reg.view<Kite>();
+    auto winds = reg.view<Wind>();
+
+    std::ostringstream oss;
+    oss << "FPS: " << std::fixed << std::setprecision(1) << fps;
+
+    for (auto& [e, kite] : kites) {
+        oss << " | Kite (pulling=" << kite->pulling
+            << ", tension=" << kite->tension
+            << ", durability=" << kite->durability << ")";
+    }
+    for (auto& [e, wind] : winds) {
+        oss << " | Wind: " << std::fixed << std::setprecision(2) << wind->force;
+    }
+
+    if (paused) oss << " [PAUSED]";
+    hud.drawText(oss.str(), 10, 10);
+
+    // Barras HUD
+    int y = 35;
+    for (auto& [e, kite] : kites) {
+        float tension    = std::clamp(kite->tension,    0.0f, 1.0f);
+        float durability = std::clamp(kite->durability, 0.0f, 1.0f);
+
+        hud.drawBar(tension, 10, y, 200, 15, {200, 50, 50, 255});
+        y += 25;
+        hud.drawBar(durability, 10, y, 200, 15, {50, 200, 50, 255});
+        y += 25;
+    }
+    for (auto& [e, wind] : winds) {
+        float w = (wind->force + 1.0f) / 2.0f;
+        w = std::clamp(w, 0.0f, 1.0f);
+        hud.drawBar(w, 10, y, 200, 15, {50, 100, 200, 255});
+    }
+
+    hud.present();
+}

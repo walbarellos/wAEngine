@@ -1,0 +1,228 @@
+Entendido, discípulo ⚡. Vou lhe entregar um **Documento Técnico Completo** para o *Pepeta Royale*, cobrindo **arquitetura, endpoints, instruções de uso e instalação**, em formato pronto para ser versionado no repositório (`docs/pepeta-system-doc.md`).
+
+---
+
+# 📖 Documento Técnico — *Pepeta Royale*
+
+---
+
+## 🏗️ Arquitetura Geral do Sistema
+
+### Camadas
+
+1. **Cliente (C++/SDL2/OpenGL)**
+
+   * Interface gráfica (HUD, menus, arena).
+   * Lógica determinística de jogo (movimento, QTE, corte).
+   * Comunicação com NetSync via UDP (ENet/Asio).
+
+2. **Backend (Node.js/NestJS)**
+
+   * **Auth Service** → login, tokens JWT.
+   * **Lobby Service** → criação/entrada de lobbies.
+   * **NetSync Service** → lockstep determinístico e validação.
+   * **Ranking/Profile Service** → perfis, builds, Elo/MMR.
+   * **Balance/Content Service** → configs JSON/YAML de builds, patch notes.
+   * **Telemetry/Anti-Cheat Service** → métricas (Prometheus), flags de cheat.
+
+3. **Banco de Dados (PostgreSQL + Redis)**
+
+   * PostgreSQL → entidades persistentes (Jogador, Build, Partida, Temporada).
+   * Redis → cache (matchmaking, lobbies em tempo real, rate-limit).
+
+4. **Infraestrutura (Kubernetes/Docker)**
+
+   * Pods independentes para cada serviço.
+   * CI/CD automatizado (GitHub Actions → Helm → k8s).
+   * Observabilidade com Prometheus + Grafana.
+
+---
+
+## 📊 Diagrama de Arquitetura (simplificado)
+
+```
+ [ Cliente SDL2 ]
+      │
+   UDP/ENet
+      │
+ [NetSync Service] ←→ [Lobby Service] ←→ [Auth Service]
+      │
+      ├──→ [Ranking/Profile Service] ←→ PostgreSQL
+      ├──→ [Balance Service] (JSON/CDN)
+      └──→ [Telemetry/Anti-Cheat Service] ←→ Redis/Kafka
+```
+
+---
+
+## 🛣️ Endpoints (REST/GraphQL)
+
+### Auth
+
+* `POST /auth/signup` — cria conta.
+* `POST /auth/login` — retorna JWT.
+* `POST /auth/refresh` — renova tokens.
+
+### Perfil
+
+* `GET /profile/me` — retorna perfil.
+* `PATCH /profile/me` — altera dados básicos.
+
+### Lobbies
+
+* `POST /lobbies` — cria lobby.
+* `POST /lobbies/join` — entra em lobby via código.
+* `GET /lobbies/:id` — status.
+* `POST /lobbies/:id/start` — inicia pré-duelo.
+
+### Partidas
+
+* `POST /matches/:id/qte/submit` — envia resultado de QTE.
+* `POST /matches/:id/result` — resultado final (NetSync → Ranking).
+* `GET /matches/:id` — resumo.
+
+### Ranking & Temporadas
+
+* `GET /rankings/global?season=...`
+* `GET /rankings/me`
+* `GET /seasons/current`
+
+### Builds
+
+* `GET /content/builds` — JSON de pipas/linhas.
+* `POST /builds` — cria/edita build.
+* `GET /builds/mine`
+
+### Telemetria
+
+* `POST /telemetry/client` — envia métricas `{ fps, rtt, qteAcc }`.
+
+---
+
+## 🔐 Autenticação & Autorização
+
+* **JWT** (`access ~15min`, `refresh ~7d`).
+* **Roles:** `USER`, `MOD`, `ADMIN`.
+* Rotas protegidas exigem header `Authorization: Bearer <token>`.
+* Lobbies → apenas host pode iniciar (`role=HOST`).
+
+---
+
+## 🧩 Instruções de Uso
+
+### Jogador
+
+1. Baixar cliente (PC/Linux Flatpak/AppImage ou APK Android).
+2. Fazer login (ou guest).
+3. Criar ou entrar em lobby via link/código.
+4. Disputar pré-duelo (QTE de 10s).
+5. Jogar partida normal (manobras, cortes, builds).
+6. Ver resultados → XP, Elo, skins.
+
+### Moderador/Admin
+
+* Acessa painel web companion (`admin.pepeta.gg`).
+* Pode: banir contas, ajustar builds via Balance Service, consultar métricas.
+
+---
+
+## ⚙️ Processos de Instalação
+
+### 1. Cliente (C++)
+
+#### Pré-requisitos
+
+* CMake ≥ 3.20
+* SDL2 + SDL2\_mixer
+* OpenGL (mesa-utils no Linux)
+
+#### Instalação
+
+```bash
+git clone https://github.com/pepeta-royale/client.git
+cd client
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+./pepeta-client
+```
+
+---
+
+### 2. Backend (Node.js/NestJS)
+
+#### Pré-requisitos
+
+* Node.js ≥ 20
+* PostgreSQL ≥ 15
+* Redis ≥ 7
+
+#### Instalação
+
+```bash
+git clone https://github.com/pepeta-royale/backend.git
+cd backend
+npm install
+npm run build
+npm run start:dev
+```
+
+#### Configuração `.env`
+
+```env
+DATABASE_URL=postgres://user:pass@localhost:5432/pepeta
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=supersecret
+```
+
+---
+
+### 3. Infraestrutura (Docker/Kubernetes)
+
+#### Build imagens
+
+```bash
+docker build -t pepeta-backend ./backend
+docker build -t pepeta-client ./client
+```
+
+#### Deploy (Helm chart exemplo)
+
+```bash
+helm upgrade --install pepeta ./helm \
+  --set image.tag=latest \
+  --namespace=pepeta
+```
+
+---
+
+## 📊 Diagramas Adicionais
+
+### Fluxo do Jogo (FSM)
+
+```
+[Login] → [Lobby Criado] → [Pré-Duelo 10s] → [Partida] → [Resultado] → [Ranking Atualizado]
+```
+
+### DER (simplificado)
+
+```
+Jogador 1─N Build N─1 Pipa
+Jogador 1─N Build N─1 Linha
+Jogador N─M Partida (ParticipacaoPartida)
+Jogador N─M Lobby (JogadorLobby)
+Jogador N─M Temporada (PontuacaoTemporada)
+```
+
+---
+
+## ✅ Resumo
+
+* **Arquitetura:** modular (cliente C++, backend Node, DB relacional).
+* **Endpoints:** REST/GraphQL documentados.
+* **Fluxos de uso:** claros e responsivos.
+* **Instalação:** passos prontos para Linux/PC/Backend/Kubernetes.
+* **Documentação viva:** pode evoluir com patch notes e balanceamento.
+
+---
+
+👉 Deseja que eu prepare este documento também em **formato Markdown técnico completo (`pepeta-system-doc.md`)** com sumário, para ser colocado diretamente no repositório `docs/`?

@@ -1,0 +1,1 @@
+/usr/bin/c++ -g -Wl,--dependency-file=CMakeFiles/ecs_test.dir/link.d CMakeFiles/ecs_test.dir/src/ecs_test.cpp.o -o ecs_test  libpepeta_engine.a /usr/lib/libSDL2-2.0.so.0.3200.56 /usr/lib/libSDL2_ttf.so /usr/lib/libSDL2_image.so /usr/lib/libGLX.so /usr/lib/libOpenGL.so

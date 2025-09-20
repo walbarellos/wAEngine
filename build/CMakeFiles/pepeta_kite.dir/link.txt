@@ -1,0 +1,1 @@
+/usr/bin/c++ -g -Wl,--dependency-file=CMakeFiles/pepeta_kite.dir/link.d CMakeFiles/pepeta_kite.dir/src/main.cpp.o CMakeFiles/pepeta_kite.dir/src/game/Game.cpp.o -o pepeta_kite  libpepeta_engine.a /usr/lib/libSDL2-2.0.so.0.3200.56 /usr/lib/libSDL2_ttf.so /usr/lib/libSDL2_image.so /usr/lib/libGLX.so /usr/lib/libOpenGL.so

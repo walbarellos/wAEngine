@@ -1,0 +1,286 @@
+1. Introdução e Visão Geral (O Contexto)
+O projeto Pepeta Royale é um jogo competitivo de pipas (papagaios) com arquitetura modular e complexa.
+A seguir resumimos o contexto técnico:
+Cliente (Game Core): Desenvolvido em C++20 utilizando SDL2/OpenGL, seguindo o padrão de
+arquitetura ECS (Entity-Component-System). A lógica de jogo é determinística utilizando modelo
+lockstep para sincronização – ou seja, todos os clientes processam os mesmos inputs em passo
+sincronizado para garantir estados idênticos.
+Backend (Serviços): Implementado em Node.js/TypeScript no formato de microserviços dedicados
+(Auth, Net Sync, Ranking, etc.), adotando princípios de CQRS (Command Query Responsibility
+Segregation) e DDD (Domain-Driven Design). Cada serviço representa um contexto de domínio e
+se comunica através de contratos bem definidos.
+Objetivo: Realizar uma Revisão Arquitetural de Risco focada nos aspectos de escalabilidade,
+determinismo e desacoplamento. Abordaremos questões críticas em cada módulo, avaliando potenciais
+riscos e medidas mitigadoras.
+2. Revisão Tática por Módulo (As Perguntas Focadas)
+Cliente C++ / ECS – Separação da Lógica (ECS vs. OOP)
+Pergunta: O módulo World em C++ (que gerencia a arena e o vento) deve ser implementado como um
+Sistema da arquitetura ECS ou como um gerenciador de estado central (singleton)? Como evitar que a lógica
+de jogo (ECS) vaze para a camada de apresentação ( Renderer.hpp )?
+Análise: Idealmente, o World (responsável por fenômenos globais como vento, limites da arena, etc.)
+deve integrar-se ao ECS como um sistema ou conjunto de componentes, em vez de ser um singleton
+monolítico. Implementar World como um Sistema do ECS traz benefícios de escalabilidade e isolamento
+– ele atualiza e gere componentes (por exemplo, um componente Wind aplicado às entidades afetadas)
+dentro do ciclo ECS, sem expor estado global desnecessário. Isso evita a criação de um God Object
+centralizador e facilita testar ou evoluir a lógica de ambiente de forma independente.
+Para prevenir vazamento de lógica de jogo na camada de apresentação, deve-se seguir uma clara
+separação de responsabilidades: a Renderer (renderização) não deve tomar decisões de jogo, apenas ler o
+estado atual dos componentes para desenhar a cena. Em prática, isso significa manter toda a atualização
+de estado (posições, física, pontuações, etc.) dentro de sistemas ECS no módulo de jogo, e a
+Renderer.hpp acessa somente os dados necessários (como componentes de posição, sprites, etc.) para
+representar o frame. Por exemplo, se há lógica de vento que influencia a trajetória das pipas, essa lógica
+acontece no sistema World/WindSystem dentro do ECS, atualizando componentes de posição ou
+velocidade; o renderer, por sua vez, apenas pega as posições finais das pipas para desenhá-las. Assim, não
+há lógica de jogo dentro do código de renderização, evitando dependências circulares e mantendo o
+determinismo (a lógica de atualização é igual para todos os clientes). Em suma, World pode ser um
+sistema ECS ou parte do contexto ECS (muitas implementações ECS têm um objeto “world” representando a
+
+registry de entidades/sistemas). O importante é não usá-lo como singleton global mutável para
+compartilhar estado arbitrariamente – isso quebraria a natureza modular do ECS e poderia introduzir
+estados imprevisíveis. Mantendo World restrito ao ECS e o renderer puramente como view, garante-se o
+desacoplamento entre simulação e visualização.
+Sincronização / Lockstep – Risco de Checagem de Checksum
+Pergunta: O serviço de sincronização de rede (Net Sync Service em Node.js) deve confiar que os inputs
+agregados pelo cliente C++ são determinísticos? Onde, no cliente C++, deve ocorrer a checagem de
+checksum de estado para garantir medidas de anti-cheat?
+Análise: Em um modelo lockstep determinístico, o servidor de sincronização (Net Sync) atua principalmente
+como um relé de inputs – ele coleta os comandos de cada cliente e os distribui a todos, assumindo que
+todos os clientes executarão esses comandos de forma idêntica. Em teoria, se a lógica do jogo for
+verdadeiramente determinística, todos os clientes terão o mesmo estado após aplicar a mesma
+sequência de inputs. Portanto, o Net Sync Service “confia” no determinismo para não precisar validar cada
+estado a cada frame (isso mantém a latência baixa). Contudo, confiar cegamente é arriscado do ponto
+de vista de cheats e divergências. A prática recomendada é incluir um mecanismo de verificação de
+integridade: cada cliente calcula um checksum do estado do jogo periodicamente (por exemplo, a cada n
+ticks de simulação) e envia esse valor para comparação .
+No cliente C++, a checagem de checksum deve ocorrer no final de cada ciclo de atualização
+determinística, ou seja, após aplicar todos os inputs de um frame/tick de lockstep. Uma forma comum é
+implementar isso dentro do loop principal de jogo (ou em um sistema dedicado de sincronização): depois
+de world.update() (que processa o tick do ECS), o cliente percorre o estado relevante (por exemplo,
+posições e estados de todas entidades importantes) e computa um hash/checksum representativo. Esse
+checksum pode então ser enviado ao servidor Net Sync ou comparado entre peers. O Net Sync Service
+reuniria os checksums de todos os clientes para aquele tick e verificaria se todos batem. Se um cliente
+divergir (checksum diferente), isso indica uma des sincronização ou tentativa de trapaça. Nesse caso, ações
+de mitigação podem ser tomadas: desde refazer a sincronização para aquele cliente até expelir o cliente por
+possível cheat, dependendo da política do jogo .
+Resumindo, o Net Sync Service deve assumir determinismo, mas validar assincronamente. Ele não
+recalcula todo o estado (o que seria custoso), mas usa os checksums dos clientes como prova de
+consistência. Essa checagem no cliente C++ acontece dentro do loop de jogo, provavelmente logo após a
+simulação de cada frame de lockstep, garantindo um anti-cheat básico e detecção rápida de desync. Isso
+mantém a confiança na simulação distribuída, sem abrir mão de detectar violações de integridade.
+Comunicação entre Serviços – Definição de Contratos (CQRS)
+Pergunta: O padrão CQRS está sendo bem aplicado na comunicação entre os microserviços? Quais schemas
+(REST/gRPC) seriam críticos para manter um contrato imutável (conforme o plano de refino) entre o
+serviço de Net Sync e o de Ranking?
+Análise: A arquitetura proposta separa bem as responsabilidades – por exemplo, o serviço de Net Sync
+foca na sincronização de partidas em tempo real, enquanto o serviço de Ranking lida com classificação de
+jogadores e resultados agregados. Isso é alinhado com DDD, onde cada microserviço representa um
+
+bounded context. Aplicar CQRS nesse cenário significa que as operações de escrita (por exemplo, finalização
+de partida, registro de resultado) estão desacopladas das operações de leitura (consulta de rankings,
+histórico etc.). Em outras palavras, em vez de um serviço tentar fazer ambos, o Net Sync emitiria eventos/
+comandos de conclusão de jogo, e o serviço de Ranking consumiria esses eventos para atualizar os
+rankings – cada um otimizado para sua tarefa (escrever ou ler).
+Para que essa comunicação seja robusta, é fundamental definir contratos de interface bem versionados
+e imutáveis entre esses serviços. Dois exemplos de schemas críticos seriam:
+Evento de Resultado de Partida: quando uma partida termina, o Net Sync Service poderia gerar
+um evento (via mensagem ou chamada REST) com um schema contendo os detalhes necessários:
+IDs dos jogadores, seus builds/escolhas, pontuação, vencedor, duração da partida, timestamp, etc.
+Esse evento, digamos MatchResult , seria consumido pelo serviço de Ranking. Definir esse
+payload com um esquema estável (por exemplo, um JSON conforme um schema versionado, ou uma
+mensagem Protocol Buffers se usar gRPC) garante que ambos os lados concordem nos campos e
+semântica. Uma vez definido e em produção, esse contrato deve ser tratado como imutável – ou
+somente extensível de maneira retrocompatível – para não quebrar o serviço de Ranking a cada
+mudança.
+Solicitação de Atualização de Ranking / Score: alternativamente ou adicionalmente, o Ranking
+Service poderia expor um endpoint (REST/gRPC) para registrar resultados ou consultar posições. Por
+exemplo, um endpoint REST POST /ranking/update com um corpo padrão contendo
+playerId , seasonId , pointsEarned etc., ou um serviço gRPC
+UpdatePlayerRanking(RankingUpdateRequest) . Novamente, o formato desse request/
+response precisa ser bem definido e estável. Conforme indicado no plano de ciclos de refino, essas
+interfaces deveriam ser pensadas antecipadamente e mudadas raramente.
+Em suma, o padrão CQRS está bem aplicado se o Net Sync apenas envia comandos/eventos e não precisa
+saber como o Ranking os armazena, e o Ranking apenas recebe esses inputs e atualiza/expondo consultas
+de classificação. Cada microserviço opera em sua modelo de domínio, e compartilham apenas DTOs
+contratados. Recomenda-se o uso de esquemas explicitamente versionados (por exemplo, incluir versão
+na URL ou no payload, ou usar gRPC IDL) para garantir a immutability do contrato ao longo das iterações.
+Assim, consegue-se desacoplamento: mudanças internas no serviço de Ranking (ex: algoritmo de cálculo)
+não afetam o Net Sync, desde que o contrato ( MatchResult , etc.) permaneça conforme combinado.
+Modelagem de Dados – Integridade do DER
+Pergunta: O modelo entidade-relacionamento (conforme documentação de requisitos) suporta de forma
+eficiente as queries mais pesadas – por exemplo, “Top 10 builds mais usadas na última temporada” – sem
+violar a integridade relacional do PostgreSQL?
+Análise: Pelo desenho do DER (Diagrama de Entidade-Relacionamento) proposto, observa-se que as
+entidades principais incluem jogadores/usuários, partidas, temporadas, builds (configurações de pipas)
+etc., com relacionamentos normalizados (chaves estrangeiras representando associações legítimas). Isso é
+um bom sinal para integridade – todas as referências entre tabelas são consistentes e seguem as regras
+ACID do PostgreSQL. Consultas complexas como “Top 10 builds da última temporada” geralmente
+envolvem JOINs e agregações (por exemplo, juntar tabela de partidas com tabela de builds, filtrando por
+temporada e contando ocorrências de cada build). Em um modelo bem normalizado, essa query é possível
+
+sem duplicação de dados: cada partida registra qual build foi usado, vinculando pelo ID de build; a
+integridade garante que cada ID de build referencie um registro válido na tabela de builds, e assim por
+diante.
+Para manter a eficiência, é importante considerar índices e volume de dados. Uma query de “top 10” builds
+numa temporada filtrará possivelmente milhões de partidas (se o jogo for muito popular). Porém, com um
+índice por temporada e build nas partidas, o PostgreSQL consegue agrupar e ordenar os resultados
+rapidamente. Essa otimização não fere a integridade – ao contrário, apoia-se nela. Além disso, se
+necessário escalar, podem-se usar views materializadas ou tabelas de resumo pré-calculadas para
+estatísticas de temporada, mas mantendo essas derivadas atualizadas via triggers ou jobs, de forma
+controlada, sem quebrar a normalização.
+Importante destacar que não é preciso desnormalizar agressivamente (ou usar NoSQL) apenas para
+obter esse tipo de relatório, desde que o DER esteja bem projetado. Por exemplo, a tabela de Partida
+contendo season_id e build_id (chaves estrangeiras para Temporada e Build, respectivamente)
+permite exatamente a query mencionada com agregação e ordenação por contagem, sem qualquer
+inconsistência. Garantir integridade relacional significa que não teremos IDs órfãos ou dados duplicados
+corrompendo o resultado – cada utilização de build em partida corresponde a um registro válido de build, e
+filtrar por temporada é confiável. Portanto, o modelo suporta sim consultas pesadas como essa de forma
+consistente. A atenção deve estar na performance: utilizar o poder do PostgreSQL (índices B-tree, queries
+otimizadas) e, se o volume crescer muito, avaliar estratégias como sharding por temporada ou mecanismos
+de cache para rankings históricos. Tudo isso sem violar as constraints de integridade (ou seja, sem remover
+foreign keys ou normalização), mantendo os dados confiáveis.
+Roteiro de Implementação – A Ordem da Inércia
+Pergunta: Qual seria a sequência de implementação que minimiza retrabalho dentre os módulos
+principais: (A) o núcleo de física e matemática (ex.: Vec2 / Physics.hpp no Core), (B) o serviço de Auth
+(Backend), ou (C) o módulo de Renderização ( Renderer.hpp na View)? Em que ordem desenvolver esses
+componentes para evitar refatorações desnecessárias?
+Análise: Para minimizar retrabalho em um projeto com tantos módulos, é prudente começar pelos
+fundamentos do jogo, então progredir para as partes de suporte. A sequência recomendada seria: A → C
+→ B, ou seja:
+Core de física e lógica (A): Implementar primeiro o núcleo matemático ( Vec2 , sistema de física de
+pipas, colisões, etc.). Essa base é crítica porque toda a mecânica do jogo depende dela e porque o
+determinismo do lockstep nasce aqui. Se a física e cálculo vetorial não forem consistentes, qualquer
+trabalho em rede ou visualização pode se tornar inválido. Desenvolver e validar esse núcleo primeiro
+cria uma fundação estável. Por exemplo, assegure que as operações de Vec2 e atualização de
+física produzem resultados iguais em diferentes máquinas (importantíssimo para determinismo).
+Ajustes feitos nessa fase têm menos impacto em camadas superiores, então investir aqui reduz
+retrabalho futuro.
+Módulo de Renderização (C): Com a lógica de jogo básica funcionando, construir o Renderer (ou
+pelo menos uma versão simples dele) em segundo lugar permite visualizar e depurar o
+comportamento do core. Embora pareça apenas “cosmético”, o renderer ajuda a identificar
+problemas na lógica (ver se a física da pipa está correta, por exemplo) antes de escalar para
+
+multiplayer. Além disso, a renderização não deve influenciar a lógica; implementá-la após o core
+garante que estamos apenas consumindo o estado do jogo, não definindo-o. Iniciar a renderização
+cedo também melhora a moral da equipe e possibilita demos internas, mas mantendo a arquitetura:
+a camada de view depende da de game, e não o contrário.
+Serviço de Auth e demais backend (B): Funcionalidades de autenticação e serviços de backend
+podem vir em terceiro lugar. Isso porque sistemas de Auth, embora importantes para o produto
+final, são relativamente desacoplados da mecânica de jogo. Pode-se desenvolver o Auth em
+paralelo também; porém, se recursos humanos são limitados, implementá-lo após ter um protótipo
+jogável evita retrabalho – por exemplo, requisitos de Auth podem depender de decisões de
+gameplay (perfis, registro de estatísticas, etc.) que ficam mais claras após o core estar funcional.
+Além disso, autenticação e gestão de contas usam tecnologias diferentes (Node.js/TS) que não
+bloqueiam o desenvolvimento do cliente. Colocar Auth por último (nesse trio) significa que quando
+estiver pronto para integrar, já teremos um jogo funcional para conectar ao sistema de contas, e
+podemos testar fluxos completos (login → jogar partida → ver ranking) de uma vez, ajustando
+eventuais incompatibilidades de contrato com menos iterações.
+Em suma, começar pelo Game Core constrói a inércia técnica certa – você estabelece as regras do jogo e
+garante determinismo. Em seguida, Renderização para validar a experiência e descobrir cedo qualquer
+necessidade de ajuste no core. Por fim, Auth/Backend, que pode inclusive ser desenvolvido enquanto isso
+por outra equipe, mas conceitualmente vem depois, pois depende de conhecer quais dados de jogador/
+partida precisam ser guardados e como. Essa ordem minimiza retrabalho e facilita integração incremental
+dos módulos. (Naturalmente, outros serviços backend como o Net Sync e Ranking entrariam logo após ter o
+core e um básico multiplayer local prontos, mas foram omitidos aqui conforme as opções dadas.)
+3. Documentação Crucial (Para Referência Rápida)
+A seguir, trechos relevantes dos artefatos do projeto para consulta rápida.
+1. Conteúdo do CMakeLists.txt (configuração SDL2 e C++20):
+cmake_minimum_required(VERSION 3.15)
+project(PepetaRoyale LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_EXTENSIONS OFF)
+# Encontrar e incluir bibliotecas SDL2
+find_package(SDL2 REQUIRED)
+include_directories(${SDL2_INCLUDE_DIRS})
+# Definição do executável e linkagem com SDL2
+add_executable(PepetaClient
+src/core/Vec2.cpp src/core/Physics.cpp
+src/game/World.cpp src/game/Kite.cpp src/game/Line.cpp
+src/render/Renderer.cpp src/render/HUD.cpp
+src/main.cpp)
+target_link_libraries(PepetaClient ${SDL2_LIBRARIES})
+
+2. Conteúdo do main.cpp (loop básico do jogo):
+#include <SDL.h>
+#include "World.hpp"
+#include "Renderer.hpp"
+int main(int argc, char* argv[]) {
+// Inicialização do SDL e criação de janela
+if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+SDL_Log("Erro ao inicializar SDL: %s", SDL_GetError());
+return 1;
+}
+SDL_Window* window = SDL_CreateWindow("Pepeta Royale",
+SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+800, 600, SDL_WINDOW_OPENGL);
+// ... (Inicialização do OpenGL context, etc.)
+World world; // Mundo/ECS inicializado
+Renderer renderer; // Renderer recebe referência ao mundo, se necessário
+bool running = true;
+while (running) {
+// 1. Processar eventos de entrada
+SDL_Event event;
+while (SDL_PollEvent(&event)) {
+if (event.type == SDL_QUIT) {
+running = false;
+}
+// ... (tratar outros tipos de evento, inputs do jogador, etc.)
+}
+// 2. Atualizar lógica de jogo (ECS)
+world.update(); // atualiza sistemas ECS: física, vento, colisões, etc.
+// 3. Renderizar o frame na tela
+renderer.draw(world);
+// 4. Sincronizar loop (frame cap ou sincronização de tick do lockstep)
+SDL_Delay(16); // ~60 FPS (simplificado; em lockstep real seria por
+tick)
+}
+// Finalização
+SDL_DestroyWindow(window);
+SDL_Quit();
+6
+return 0;
+}
+3. DER Simplificado (Modelo Entidade-Relacionamento):
+(Principais entidades e relacionamentos do banco de dados, conforme RF/RNF.)
+Usuário – id_usuario (PK), nome, email, senha_hash, ...
+Perfil – id_perfil (PK), apelido, elo, demais atributos de jogador; id_usuario (FK → Usuário)
+Temporada – id_temporada (PK), nome/descrição, data_inicio, data_fim, ...
+Build – id_build (PK), descrição da configuração (tipo de pipa, linha, rabiola etc.), atributos, ...
+Partida – id_partida (PK), data_hora, id_temporada (FK → Temporada), id_jogador1 (FK →
+Perfil), id_jogador2 (FK → Perfil),
+id_build1 (FK → Build), id_build2 (FK → Build), vencedor, duração, ...
+Ranking – id_ranking (PK), id_temporada (FK → Temporada), id_perfil (FK → Perfil),
+pontuação, posição, ...
+Observação: Com esse modelo, consultas como “Top 10 builds da última temporada” podem ser realizadas via
+uma query SQL que filtre Partidas por id_temporada e agregue por id_build , garantindo integridade
+(pois cada id_build refere-se a um Build válido). Por exemplo: contar ocorrências de cada build em
+partidas da temporada X e ordenar por frequência. A integridade referencial assegura que estamos
+contando builds válidos e ativos no sistema.
+Sugestão de Estrutura de Pastas e Modularização
+A estrutura de pastas fornecida é ilustrativa. Podemos refiná-la para melhorar a organização: por exemplo,
+separar conceitos de ECS em componentes e sistemas, e agrupar código por domínio. Uma sugestão seria:
+src/
+├── core/ # utilitários básicos (Vec2, Physics, etc.)
+├── ecs/ # infraestrutura ECS genérica (Entity, Component, System base
+classes)
+├── game/
+│ ├── components/ # componentes ECS do jogo (ex: Position, Velocidade,
+KiteStatus, WindArea, etc.)
+│ ├── systems/ # sistemas ECS do jogo (ex: PhysicsSystem, WindSystem,
+CombatSystem, etc.)
+│ └── World.hpp # configuração do mundo/registro ECS, se aplicável
+├── render/ # renderização e interface (Renderer.hpp, HUD.hpp, shaders,
+etc.)
+└── ... # outros (entradas, recursos, main.cpp, etc.)
+Essa organização deixa claro o que é engine genérico vs. lógica específica do jogo vs. apresentação. Por
+exemplo, World poderia ser reimplementado como um sistema dentro de game/systems/
+WindSystem.cpp (se sua principal função é atualizar vento e arena) ou como parte do contexto ECS no
+próprio main. Manter a pasta core apenas para código utilitário e independente (como matemática) ajuda a
+
+reutilização. Os microserviços backend estariam em projetos separados, cada um com sua estrutura interna
+(por exemplo, um serviço Node.js separado para Auth, outro para Ranking). Em resumo, a ênfase é em
+desacoplamento e coerência: código de lógica de jogo agrupado, código de renderização isolado, e
+módulos genéricos (ECS core, física) reutilizáveis em todo o projeto. Essa estrutura modular facilita escalar o
+projeto e reduzir a chance de dependências indevidas entre partes distintas do sistema.
+Game Networking Demystified, Part I: State vs. Input
+https://ruoyusun.com/2019/03/28/game-networking-1.html
+

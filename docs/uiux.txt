@@ -1,0 +1,159 @@
+* **Fluxos de uso esperados** (entrar no jogo → lobby → duelo pré-partida → batalha → resultado).
+* **Boas práticas de UX/UI** (claro, minimalista, acessível, responsivo).
+* **Identidade estética**: urbana, pixel-art/cartoon, mas com elegância funcional (Sabedoria, Força, Beleza).
+
+---
+
+# 🧭 Fluxos de Uso e Telas Principais
+
+### 1. **Tela Inicial / Login**
+
+* **Elementos:**
+
+  * Logo animado (pipa tremulando).
+  * Botões: “Entrar” (com e-mail/OAuth) e “Jogar sem conta” (guest).
+  * Acessibilidade: contraste alto, labels de botões legíveis (WCAG AA).
+* **Boas práticas:** login simples, 2 cliques até o jogo.
+* **Responsivo:**
+
+  * Mobile: botão grande centralizado.
+  * Desktop: logo ao lado, login à direita.
+
+---
+
+### 2. **Menu Principal**
+
+* **Elementos:**
+
+  * Botões grandes: “Jogar Rápido”, “Lobbies”, “Perfil”, “Ranking”, “Loja/Skins”.
+  * Atalhos inferiores: Configurações ⚙️, Acessibilidade ♿.
+* **Estilo:** pixel-art limpa, cores de bairro (céu azul, linhas brancas).
+* **Feedback:** botão pulsa ao hover/tap, som curto (vento).
+
+---
+
+### 3. **Lobby**
+
+* **Elementos:**
+
+  * Código do lobby (`pepeta.gg/j/abcd`).
+  * Lista de jogadores com avatar/pipa escolhida.
+  * Botão “Pronto ✅” por jogador.
+  * Host: botão “Iniciar Partida”.
+* **Feedback em tempo real:** quando alguém entra, aparece animação da pipa subindo.
+* **Responsivo:**
+
+  * Mobile: lista em coluna vertical.
+  * Desktop: grid lateral com chat rápido (emojis pré-definidos ✂️ ⚔️ 👍).
+
+---
+
+### 4. **Duelo de Linha (Pré-Partida – 10s)**
+
+* **Layout:**
+
+  * Tela dividida ao meio (Jogador A vs Jogador B).
+  * Barra de linha vibrando (HUD central).
+  * Prompts QTE (toque/click/swipe) aparecem em sequência.
+  * Timer regressivo (10s).
+* **Feedback:**
+
+  * Acerto: faísca + som de linha raspando.
+  * Erro: vibração discreta + “linha frouxa” visual.
+* **Acessibilidade:** QTEs com ícones grandes + som distinto.
+
+---
+
+### 5. **Partida Principal (Arena)**
+
+* **HUD minimalista:**
+
+  * Topo: tempo, vento (seta animada).
+  * Lateral: barra de energia (linha), ícones de habilidades com cooldown.
+  * Rodapé: botão de skill especial (mobile) / tecla destacada (desktop).
+* **Feedback visual:**
+
+  * Corte: *screenshake*, partículas (faíscas), som rasgando.
+  * Quase estourando: barra de energia pulsa em vermelho.
+* **Responsivo:**
+
+  * Mobile: HUD compacto, botões grandes.
+  * Desktop: HUD lateral expandido.
+
+---
+
+### 6. **Tela de Resultado**
+
+* **Elementos:**
+
+  * Banner do vencedor (pipa gigante tremulando).
+  * Estatísticas: cortes, QTEs vencidos, tempo de partida.
+  * XP ganho, moedas, progresso de ranking.
+* **Feedback:**
+
+  * Fita cortada caindo na tela.
+  * Música curta de vitória/derrota.
+* **Acessibilidade:** contraste garantido, texto grande, leitura de tela suportada.
+
+---
+
+# 🎨 Padrões de Design
+
+* **Cores:**
+
+  * Fundo claro (céu azul/pôr-do-sol).
+  * HUD contrastante (branco, amarelo, vermelho crítico).
+  * Acessibilidade: todos ícones têm legenda/tooltip.
+
+* **Tipografia:**
+
+  * Fonte pixelizada para títulos.
+  * Sans-serif clara para textos (escala 16px+ no mobile).
+
+* **Componentes reutilizáveis:**
+
+  * **Card do Jogador**: avatar, nome, pipa, linha.
+  * **Botão de Skill**: ícone, cooldown radial.
+  * **Barra de Linha**: cor + vibração animada no estado crítico.
+
+---
+
+# 📱 Responsividade & Acessibilidade
+
+* **Mobile-first** (botões grandes, gestos/swipes intuitivos).
+* **Desktop** (atalhos de teclado, mouse preciso).
+* **WCAG 2.2 AA**:
+
+  * Contraste ≥ 4.5:1.
+  * Labels e tooltips textuais.
+  * Feedback multimodal (visual + sonoro + vibração).
+* **Performance UX:**
+
+  * Animações ≤ 200ms para parecer ágil.
+  * FPS 60+ garantido → nada de HUD pesado.
+
+---
+
+# 🛠️ Tecnologias (Frontend UI)
+
+* **Cliente C++ (SDL2/OpenGL)**:
+
+  * Render de sprites + HUD.
+  * Layouts adaptáveis via sistema de *UI constraints*.
+* **Web (futuro companion app)**:
+
+  * React + Tailwind (para ranking, perfis, loja).
+* **Design system**:
+
+  * Tokens de cor/tipografia centralizados (facilita temas).
+
+---
+
+# ✅ Benefícios
+
+* **Simples:** qualquer jogador entende em <1 min.
+* **Emocionante:** QTE com faíscas, som visceral.
+* **Acessível:** responsivo, contrastado, multimodal.
+* **Escalável:** interface modular (cards, barras, botões) → fácil adicionar novas habilidades/modos.
+
+---

@@ -1,0 +1,126 @@
+Excelente ponto, discípulo ⚡. O *Pepeta Royale* precisa de um **plano de refinamento contínuo** que mantenha a espiral Caracol viva: ciclos sucessivos de melhoria, **sem nunca quebrar o núcleo arquitetônico** (cliente determinístico, serviços desacoplados, banco sólido). Eis o plano:
+
+---
+
+# 🔄 Plano de Refinamento Contínuo (*Método Caracol aplicado*)
+
+## 🎯 Princípios
+
+1. **Núcleo intocável**: motor determinístico de jogo, DER central e contratos de rede não mudam; toda evolução é extensão, não ruptura.
+2. **Refinamento iterativo**: cada ciclo dura 2–3 semanas, fecha-se completo (planejamento → implementação → validação → feedback).
+3. **Feedback-métrica-ajuste**: cada melhoria só entra se houver *dado concreto* (telemetria, métricas de uso, feedback da comunidade).
+4. **Ciclos em espiral**: cada volta revisita camadas (jogabilidade, UX, rede, conteúdo), mas com profundidade maior.
+
+---
+
+## 📊 Estrutura dos Ciclos
+
+### **Ciclo 1 — Fundamentos jogáveis**
+
+* Objetivo: experiência mínima *fun-to-play*.
+* Ações:
+
+  * Validar controles, pré-duelo, corte.
+  * Medir FPS médio e estabilidade lockstep.
+  * Feedback: 20 testers internos.
+* Métricas: ≥60 FPS, taxa de desconexão <5%.
+* Refinamento: ajustar sensibilidade de input e HUD básico.
+
+---
+
+### **Ciclo 2 — HUD, acessibilidade e feedback**
+
+* Objetivo: tornar o jogo intuitivo.
+* Ações:
+
+  * Adicionar vibração da linha, indicadores de vento.
+  * Implementar acessibilidade (contraste, tooltips, remapeamento).
+* Métricas: testes de usabilidade (SUS score >75), acessibilidade WCAG 2.2 AA.
+* Refinamento: HUD modular para futuras skills.
+
+---
+
+### **Ciclo 3 — Multiplayer estável**
+
+* Objetivo: expandir 1v1 para lobbies com 4–8.
+* Ações:
+
+  * Stress test com bots.
+  * Melhorar reconciliação snapshot/rollback.
+* Métricas: latência média <120ms, divergência lockstep <0.2%.
+* Refinamento: algoritmos de compressão de pacotes.
+
+---
+
+### **Ciclo 4 — Progressão e ranking**
+
+* Objetivo: criar motivação de longo prazo.
+* Ações:
+
+  * Implementar Elo/MMR.
+  * Adicionar skins cosméticas e builds configuráveis.
+* Métricas: retenção D7 ≥ 30%, partidas médias/dia ≥ 3.
+* Refinamento: balance patches via JSON (sem redeploy).
+
+---
+
+### **Ciclo 5 — Estética & narrativa urbana**
+
+* Objetivo: polimento cultural.
+* Ações:
+
+  * Pixel art refinada, efeitos sonoros de linha e vento.
+  * Torneios sazonais com “meta da rua” (patch notes).
+* Métricas: NPS (Net Promoter Score) ≥ 7, engajamento em torneios ≥ 60% dos ativos.
+* Refinamento: rotinas de balanceamento cíclico.
+
+---
+
+### **Ciclo 6 — Escala & Observabilidade**
+
+* Objetivo: preparar para comunidade maior.
+* Ações:
+
+  * Implementar métricas no Grafana (FPS, RTT, winrate por build).
+  * Monitoramento anti-cheat.
+* Métricas: disponibilidade ≥ 99.5%, incidentes críticos ≤ 2/mês.
+* Refinamento: alertas automáticos, rollback blue-green.
+
+---
+
+## 📈 Métricas de Sucesso Globais
+
+* **Técnico**: FPS ≥ 60 (pico 120), latência média < 120ms.
+* **Usabilidade**: aprendizado < 1min, SUS > 75.
+* **Engajamento**: retenção D1 ≥ 40%, D7 ≥ 30%.
+* **Fair play**: discrepância MMR ≤ 10% nos lobbies, ban automático <1% de falsos positivos.
+
+---
+
+## ⚙️ Mecanismos de Feedback
+
+* **Telemetria embutida** (FPS, RTT, vitórias por build).
+* **Relatórios automáticos** de bugs/crashes.
+* **Enquetes rápidas** pós-partida (“Foi justo/divertido?”).
+* **Patch notes cíclicos** (nerfs, buffs, correções).
+
+---
+
+## 🧱 Salvaguardas Arquitetônicas
+
+1. **Contratos imutáveis** (inputs lockstep, DER central).
+2. **Backward compatibility** nas atualizações de cliente.
+3. **Feature flags** → ativar/desativar sem redeploy.
+4. **Separação modular** → cada microserviço pode ser refinado isoladamente.
+
+---
+
+## ✅ Resultado esperado
+
+* Um jogo que evolui como um *serviço vivo*, mas **sem nunca corromper o núcleo determinístico**.
+* Iterações curtas garantem aprendizado rápido.
+* Feedback da comunidade molda o meta, mas sem comprometer arquitetura e performance.
+
+---
+
+👉 Deseja que eu converta esse plano em um **roadmap visual em espiral (diagrama Caracol)** mostrando os ciclos de refinamento em camadas concêntricas (do núcleo ao polimento final)?

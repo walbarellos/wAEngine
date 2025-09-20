@@ -1,0 +1,187 @@
+* **Unitários** → regras isoladas (QTE, builds, Elo).
+* **Integração** → módulos conversando (Auth + Lobby, NetSync + Ranking).
+* **End-to-End (E2E)** → fluxo real (usuário → partida → resultado).
+
+Mesmo que o cliente principal seja em **C++**, o **backend** (Node/Nest/Fastify) pode usar **Jest** (unit/integration) e **Cypress/Playwright** (E2E em UI web companion, APIs e simulação de jogo).
+
+---
+
+# 🧪 Plano de Testes por Requisito Funcional
+
+---
+
+## 🎮 Jogabilidade & Mecânicas
+
+### RF1 — Controle da pipa (movimento, habilidades)
+
+* **Unitário:**
+
+  * Testar `PlayerController.move()` responde corretamente a inputs.
+  * Asserts: posição Δ conforme direção + velocidade.
+* **Integração:**
+
+  * Cliente envia input → NetSync → mesmo estado reproduzido em 2 instâncias.
+* **E2E:**
+
+  * Simular partida 1v1 → mover pipa → validar que HUD reflete energia gasta.
+
+---
+
+### RF2 — Duelo Pré-Partida (QTE 10s)
+
+* **Unitário:**
+
+  * Função `qte.evaluateHit(timing, window)` retorna score correto.
+* **Integração:**
+
+  * Jogador A e B enviam hits → NetSync soma e calcula vencedor.
+* **E2E:**
+
+  * Rodar lobby → duelo automático → verificar que vencedor recebeu buff inicial.
+
+---
+
+### RF3 — QTEs contextuais (enganchos durante partida)
+
+* **Unitário:** validar que função `triggerQTE(collisionEvent)` dispara prompt.
+* **Integração:** QTE emitido no cliente A aparece também no cliente B (consistência).
+* **E2E:** Jogadores “colidem” → ambos recebem QTE → resultado igual nos 2 lados.
+
+---
+
+### RF4 — Feedback audiovisual (cortes, erros)
+
+* **Unitário:**
+
+  * Função `hud.renderLineVibration()` altera intensidade conforme tensão.
+* **Integração:** Evento de corte dispara `SoundFX.play("rasgo")` + `Particle.spawn("faísca")`.
+* **E2E:** Jogador acerta QTE → ver efeito de som/partícula renderizado.
+
+---
+
+## 🏆 Modos de Jogo
+
+### RF6 — 1v1 rápido
+
+* **Unitário:** `MatchFactory.create("1v1")` gera objeto válido.
+* **Integração:** Lobby com 2 jogadores → transição `AGUARDANDO→PRE_DUELO→PARTIDA`.
+* **E2E:** Jogadores jogam partida → resultado salvo em DB.
+
+---
+
+### RF7 — Batalha de Bairro (4–8 jogadores)
+
+* **Unitário:** validação de limite `maxPlayers = 8`.
+* **Integração:** NetSync processa inputs de 8 jogadores sem divergência.
+* **E2E:** simular 8 bots → partida completa sem queda de FPS.
+
+---
+
+### RF9 — Treino contra IA
+
+* **Unitário:** função `BotAI.tick(state)` retorna ações válidas.
+* **Integração:** BotAI participa da partida e gera logs coerentes.
+* **E2E:** Jogador entra em treino → IA responde previsivelmente.
+
+---
+
+## 👥 Multiplayer & Lobbies
+
+### RF10 — Criação de lobby
+
+* **Unitário:** `LobbyService.create()` gera código único.
+* **Integração:** DB registra lobby; jogadores podem ingressar.
+* **E2E:** Jogador cria lobby via REST → outro entra com código → ambos conectados.
+
+---
+
+### RF12 — Sincronização determinística
+
+* **Unitário:** `Lockstep.replay(inputs, seed)` gera mesmo estado em runs diferentes.
+* **Integração:** 2 clientes recebem os mesmos inputs → checksums iguais.
+* **E2E:** Teste multi-instância: partida longa sem divergência.
+
+---
+
+## 📊 Builds, Progressão & Ranking
+
+### RF14/15/16 — Escolha de pipa + linha = build
+
+* **Unitário:** `Build.apply(pipa, linha)` retorna stats esperados.
+* **Integração:** Build salva em DB e reaplicada em partida.
+* **E2E:** Jogador cria build → seleciona em lobby → atributos refletem em partida.
+
+---
+
+### RF17 — Ranking/Elo
+
+* **Unitário:** `elo.update(oldElo, result, opponentElo)` segue fórmula.
+* **Integração:** Resultado de partida atualiza DB corretamente.
+* **E2E:** Jogador vence → ranking sobe → GET `/rankings/me` reflete.
+
+---
+
+### RF18 — Recompensas cosméticas
+
+* **Unitário:** `RewardService.grant(skinId)` adiciona ao inventário.
+* **Integração:** Inventário persistido; UI exibe skin desbloqueada.
+* **E2E:** Jogador termina missão → recebe moeda/skin → aparece em perfil.
+
+---
+
+## 🎨 Interface & Experiência
+
+### RF20 — HUD minimalista
+
+* **Unitário:** função `HUD.renderBars()` respeita limites e cores.
+* **Integração:** HUD atualiza em evento de corte.
+* **E2E:** Jogador leva dano → barra pisca vermelho na tela.
+
+### RF22 — Acessibilidade
+
+* **Unitário:** verificação de contraste ≥ 4.5:1 (testes automatizados Lighthouse/axe).
+* **Integração:** Controles remapeáveis salvos e aplicados.
+* **E2E:** Jogador remapeia tecla → input reconhecido corretamente.
+
+---
+
+# ⚙️ Ferramentas de Teste
+
+* **Unitários/Integração (backend/serviços):**
+
+  * **Jest** (TS/Node).
+  * **Catch2/GoogleTest** (C++ client).
+
+* **Integração DB/API:**
+
+  * **Supertest** (REST APIs Nest/Fastify).
+  * **Prisma Test Utils** (fixtures no PostgreSQL).
+
+* **End-to-End:**
+
+  * **Cypress** (fluxos web companion).
+  * **Playwright** (multi-instância para simulação de lobbies/partidas).
+  * **Custom test harness** em C++ para simular partidas determinísticas.
+
+* **Acessibilidade:**
+
+  * **axe-core**, **Lighthouse CI**.
+
+---
+
+# ✅ Critérios de Aceitação
+
+* **Cobertura unitária ≥ 80%** em regras de negócio críticas (QTE, builds, Elo).
+* **Cobertura E2E mínima:**
+
+  * Criar conta → criar lobby → duelo pré → partida → resultado persistido.
+  * Ranking atualizado e visível.
+* **Stress test:**
+
+  * 8 jogadores simultâneos, 5 partidas seguidas → FPS ≥ 60 e sem divergência lockstep.
+* **Segurança:**
+
+  * Rate-limit testado com flood → 429 retornado.
+  * Inputs inválidos → 400 sem crash.
+
+---
