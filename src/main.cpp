@@ -23,16 +23,15 @@
 #include <SDL2/SDL.h>
 #include <iostream>
 #include <algorithm> // std::clamp
-
-#include "engine/TextureLoader.hpp"
+#include <cmath>     // std::sin
 
 // =============================
 // Configuração do jogo
 // =============================
 struct GameConfig {
     static constexpr double FIXED_DT = 1.0 / 120.0;   // step de física
-    static constexpr double MAX_DT   = 0.25;         // evita picos (alt-tab / breakpoint)
-    static constexpr int    PRINT_FPS_EVERY = 30;    // imprime FPS no console a cada X frames
+    static constexpr double MAX_DT   = 0.25;          // evita picos
+    static constexpr int    PRINT_FPS_EVERY = 30;     // imprime FPS no console a cada X frames
 };
 
 // =============================
@@ -42,7 +41,6 @@ int main() {
     try {
         Application app("Pepeta ECS Engine", 800, 600);
         Renderer renderer;
-        GLuint cloudTex = TextureLoader::load("assets/cloud.png");
         Clock clock;
         Input input;
         HUD hud(app.getWindow());
@@ -98,7 +96,7 @@ int main() {
                 SDL_Event ev;
                 while (SDL_PollEvent(&ev)) {
                     if (ev.type == SDL_QUIT) {
-                        std::cout << "[DEBUG] SDL_QUIT recebido, mas ignorado (janela não será fechada)\n";
+                        std::cout << "[DEBUG] SDL_QUIT recebido (ignorado, use ESC para sair)\n";
                     }
                     if (ev.type == SDL_KEYDOWN) {
                         switch (ev.key.keysym.sym) {
@@ -107,12 +105,12 @@ int main() {
                                 std::cout << "[DEBUG] Encerrando por tecla ESC\n";
                                 break;
 
-                            case SDLK_r: {
+                            case SDLK_r:
                                 reg.getComponent<Position>(kite) = {0.0f, 0.5f};
                                 reg.getComponent<Velocity>(kite) = {0.0f, 0.0f};
                                 reg.getComponent<Kite>(kite)     = {false, 0.0f, 1.0f};
                                 std::cout << "[DEBUG] Kite resetado\n";
-                            } break;
+                                break;
 
                             case SDLK_F12: {
                                 int w, h;
@@ -200,61 +198,31 @@ int main() {
                         kiteSystem.update(reg, input, GameConfig::FIXED_DT);
                         movementSystem.update(reg, static_cast<float>(GameConfig::FIXED_DT));
                         destroySystem.update(reg);
-                        debugSystem.tick(reg, /*verbose*/ false);
                         acc -= GameConfig::FIXED_DT;
                     }
                 }
 
                 // -------- Render --------
-
                 {
-
                     double t = SDL_GetTicks() / 1000.0;
 
                     float baseR = 0.2f + 0.2f * std::sin(t * 0.1);
-
                     float baseG = 0.4f + 0.3f * std::sin(t * 0.13);
-
                     float baseB = 0.6f + 0.3f * std::sin(t * 0.07);
 
-
-
                     // Modula cor pelo vento
-
                     auto &wc = reg.getComponent<Wind>(windEntity);
-
                     float windFactor = std::abs(wc.force);
 
                     float r = baseR * (1.0f - windFactor) + 0.3f * windFactor;
-
                     float g = baseG * (1.0f - windFactor) + 0.3f * windFactor;
-
                     float b = baseB * (1.0f - windFactor) + 0.3f * windFactor;
 
-
-
                     renderer.clear(r, g, b);
-
-
-
-                    // Nuvens animadas (sprites reais)
-
-                    for (int i = 0; i < 3; i++) {
-
-                        float offset = std::fmod(t * (20 + i*10), app.getWidth() + 100.0f) - 100.0f;
-
-                        float y = 50 + i * 60;
-
-                        renderer.drawSprite(cloudTex, offset, y, 2.0f, 32, 32);
-
-                    }
-
                 }
 
-
-
                 renderSystem.update(reg, renderer);
-
+                debugSystem.update(reg, renderer, clock);
                 hudSystem.update(reg, hud, fps, paused, debugSystem.isEnabled(), input);
 
                 SDL_GL_SwapWindow(app.getWindow());
@@ -264,7 +232,6 @@ int main() {
             }
         }
 
-        // Saiu do while
         std::cout << "[DEBUG] Loop principal terminou porque running ficou false\n";
     }
     catch (std::exception& e) {

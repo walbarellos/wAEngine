@@ -1,5 +1,13 @@
 #pragma once
+#include <variant>
+#include <SFML/Graphics.hpp>
+
+// Componente que marca que a entidade pode ser renderizada
 struct Renderable {
-    float r = 0.3f, g = 0.8f, b = 0.4f;
-    float size = 0.1f;
+    std::variant<std::monostate, sf::ConvexShape*, sf::Sprite*, sf::Text*> drawable;
+
+    Renderable() = default;
+    explicit Renderable(sf::ConvexShape* shape) : drawable(shape) {}
+    explicit Renderable(sf::Sprite* sprite) : drawable(sprite) {}
+    explicit Renderable(sf::Text* text) : drawable(text) {}
 };

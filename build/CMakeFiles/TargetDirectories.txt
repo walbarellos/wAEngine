@@ -1,5 +1,0 @@
-/mnt/data/SteamLibrary/Engine/build/CMakeFiles/pepeta_engine.dir
-/mnt/data/SteamLibrary/Engine/build/CMakeFiles/pepeta_kite.dir
-/mnt/data/SteamLibrary/Engine/build/CMakeFiles/ecs_test.dir
-/mnt/data/SteamLibrary/Engine/build/CMakeFiles/edit_cache.dir
-/mnt/data/SteamLibrary/Engine/build/CMakeFiles/rebuild_cache.dir

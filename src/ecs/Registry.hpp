@@ -10,7 +10,6 @@ class Registry {
 
 public:
     ~Registry() {
-        // libera TODAS as alocações
         for (auto & [type, table] : components) {
             for (auto & [e, ptr] : table) delete static_cast<char*>(ptr);
         }
@@ -44,13 +43,13 @@ public:
         return static_cast<T*>(it2->second);
     }
 
-    // "view" simples: retorna mapa entidade->ponteiro do tipo
     template<typename T>
     std::unordered_map<Entity, T*> view() {
-        std::unordered_map<Entity,T*> out;
+        std::unordered_map<Entity, T*> out;
         auto it = components.find(typeid(T));
         if (it != components.end()) {
-            for (auto & [e, ptr] : it->second) out[e] = static_cast<T*>(ptr);
+            for (auto & [e, ptr] : it->second)
+                out[e] = static_cast<T*>(ptr);
         }
         return out;
     }
@@ -66,9 +65,9 @@ public:
     }
 
     std::size_t countEntities() const {
-        // conta por componente; útil como debug simples
         std::size_t total = 0;
-        for (auto & [type, table] : components) total += table.size();
+        for (auto & [type, table] : components)
+            total += table.size();
         return total;
     }
 };

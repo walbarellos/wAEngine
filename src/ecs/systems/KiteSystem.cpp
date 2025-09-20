@@ -1,23 +1,25 @@
 #include "ecs/systems/KiteSystem.hpp"
-#include "ecs/components/Kite.hpp"
+#include "ecs/Registry.hpp"
+#include "ecs/components/KiteComponent.hpp"
 #include "ecs/components/Velocity.hpp"
 #include "ecs/components/Wind.hpp"
-#include <algorithm> // std::clamp
+#include "ecs/components/Renderable.hpp"
+#include "engine/Input.hpp"
+#include <SDL2/SDL.h>
+#include <algorithm>
 
 void KiteSystem::update(Registry& reg, Input& input, double dt) {
-    auto view = reg.view<Kite>();
     auto winds = reg.view<Wind>();
-
     if (winds.empty()) return;
-    Wind* wind = winds.begin()->second; // vento global
+    Wind* wind = winds.begin()->second; // ponteiro (ecs::Registry)
 
-    for (auto& [e, kite] : view) {
-        if (!reg.hasComponent<Velocity>(e)) continue;
-        auto& vel = reg.getComponent<Velocity>(e);
+    auto view = reg.view<KiteComponent>();
+    for (auto& [eid, kite] : view) {
+        if (!reg.hasComponent<Velocity>(eid)) continue;
+        auto* vel = reg.get<Velocity>(eid);
+        if (!vel) continue;
 
-        // -----------------------
-        // Tensão da linha (SPACE)
-        // -----------------------
+        // tensão da linha (SPACE)
         if (input.isDown(SDLK_SPACE)) {
             kite->pulling = true;
             kite->tension += static_cast<float>(dt * 0.1f);
@@ -26,24 +28,24 @@ void KiteSystem::update(Registry& reg, Input& input, double dt) {
             kite->tension -= static_cast<float>(dt * 0.05f);
         }
 
-        // -----------------------
-        // Física: vento altera velocidade
-        // -----------------------
-        float accelX = wind->force * (0.5f + kite->tension); // vento puxa no X
-        float accelY = -0.2f * kite->tension;               // tensão segura no Y
+        // física do vento
+        float accelX = wind->force * (0.5f + kite->tension);
+        float accelY = -0.2f * kite->tension;
+        vel->vx += accelX * dt;
+        vel->vy += accelY * dt;
 
-        vel.vx += accelX * dt;
-        vel.vy += accelY * dt;
+        kite->shape.move({
+            static_cast<float>(vel->vx * dt),
+            static_cast<float>(vel->vy * dt)
+        });
 
-        // -----------------------
-        // Desgaste natural
-        // -----------------------
         kite->durability -= static_cast<float>(dt * 0.02f);
-
-        // -----------------------
-        // Limites
-        // -----------------------
         kite->tension    = std::clamp(kite->tension, 0.0f, 1.0f);
         kite->durability = std::clamp(kite->durability, 0.0f, 1.0f);
+
+        // garante Renderable
+        if (!reg.hasComponent<Renderable>(eid)) {
+            reg.add<Renderable>(eid, Renderable(&kite->shape));
+        }
     }
 }
